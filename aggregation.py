@@ -20,43 +20,62 @@ from __future__ import annotations
 import torch
 
 
+# def aggregate(
+#     hidden_states: torch.Tensor,
+#     attention_mask: torch.Tensor,
+# ) -> torch.Tensor:
+#     """Convert per-token hidden states into a single feature vector.
+
+#     Args:
+#         hidden_states:  Tensor of shape ``(n_layers, seq_len, hidden_dim)``.
+#                         Layer index 0 is the token embedding; index -1 is the
+#                         final transformer layer.
+#         attention_mask: 1-D tensor of shape ``(seq_len,)`` with 1 for real
+#                         tokens and 0 for padding.
+
+#     Returns:
+#         A 1-D feature tensor of shape ``(hidden_dim,)`` or
+#         ``(k * hidden_dim,)`` if multiple layers are concatenated.
+
+#     Student task:
+#         Replace or extend the skeleton below with alternative layer selection,
+#         token pooling (mean, max, weighted), or multi-layer fusion strategies.
+#     """
+#     # ------------------------------------------------------------------
+#     # STUDENT: Replace or extend the aggregation below.
+#     # ------------------------------------------------------------------
+
+#     # Default: last real token of the final transformer layer.
+#     layer = hidden_states[-1]          # (seq_len, hidden_dim)
+
+#     # Find the index of the last real (non-padding) token.
+#     real_positions = attention_mask.nonzero(as_tuple=False)  # (n_real, 1)
+#     last_pos = int(real_positions[-1].item())                 # scalar index
+
+#     # feature = layer[last_pos]          # (hidden_dim,)
+    
+#     probs = layer[:last_pos]/torch.sum(layer[:last_pos], dim=0)
+#     feature = torch.zeros(layer.shape[-1],dtype=torch.float32, device=probs.device)
+    
+#     feature[i] = torch.sum(torch.special.entr(probs[:,i]), dim=-1)
+#     return feature
+#     # ------------------------------------------------------------------
 def aggregate(
     hidden_states: torch.Tensor,
     attention_mask: torch.Tensor,
 ) -> torch.Tensor:
-    """Convert per-token hidden states into a single feature vector.
-
-    Args:
-        hidden_states:  Tensor of shape ``(n_layers, seq_len, hidden_dim)``.
-                        Layer index 0 is the token embedding; index -1 is the
-                        final transformer layer.
-        attention_mask: 1-D tensor of shape ``(seq_len,)`` with 1 for real
-                        tokens and 0 for padding.
-
-    Returns:
-        A 1-D feature tensor of shape ``(hidden_dim,)`` or
-        ``(k * hidden_dim,)`` if multiple layers are concatenated.
-
-    Student task:
-        Replace or extend the skeleton below with alternative layer selection,
-        token pooling (mean, max, weighted), or multi-layer fusion strategies.
-    """
-    # ------------------------------------------------------------------
-    # STUDENT: Replace or extend the aggregation below.
-    # ------------------------------------------------------------------
-
-    # Default: last real token of the final transformer layer.
-    layer = hidden_states[-1]          # (seq_len, hidden_dim)
-
-    # Find the index of the last real (non-padding) token.
-    real_positions = attention_mask.nonzero(as_tuple=False)  # (n_real, 1)
-    last_pos = int(real_positions[-1].item())                 # scalar index
-
-    # feature = layer[last_pos]          # (hidden_dim,)
-    feature = layer[:last_pos].mean(0)
+    """Aggregate hidden states using entropy of token distributions."""
+    
+    # Use the final layer
+    layer = hidden_states[-1]  # (seq_len, hidden_dim)
+    
+    # Get real token positions
+    real_positions = attention_mask.bool()
+    valid_hidden = layer[real_positions]  # (n_real_tokens, hidden_dim)
+    
+    feature = torch.mean(valid_hidden, dim=0)
+    # print(f"feature shape: {feature.shape}")
     return feature
-    # ------------------------------------------------------------------
-
 
 def extract_geometric_features(
     hidden_states: torch.Tensor,
@@ -86,13 +105,34 @@ def extract_geometric_features(
     # ------------------------------------------------------------------
 
     # Placeholder: returns an empty tensor (no geometric features).
-    return torch.zeros(0)
+    # Use the final layer
+    layer = hidden_states[-1]  # (seq_len, hidden_dim)
+    
+    # Get real token positions
+    real_positions = attention_mask.bool()
+    valid_hidden = layer[real_positions]  # (n_real_tokens, hidden_dim)
+    
+    # Method 1: Entropy of L2-normalized hidden states across tokens
+    # Normalize to create probability distribution over tokens
+    normalized = torch.nn.functional.softmax(valid_hidden, dim=0)  # Softmax across tokens
+    # This gives probability of each token for each feature dimension
+    
+    # Compute entropy across tokens (for each feature dimension separately)
+    token_entropy = -torch.sum(normalized * torch.log(normalized + 1e-8), dim=0)
+    # token_entropy shape: (hidden_dim,)
+    
+    # Then aggregate the entropy values (e.g., mean, max)
+    feature = token_entropy
+    
+    return feature
+
+    # return torch.zeros(0)
 
 
 def aggregation_and_feature_extraction(
     hidden_states: torch.Tensor,
     attention_mask: torch.Tensor,
-    use_geometric: bool = False,
+    use_geometric: bool = True,
 ) -> torch.Tensor:
     """Aggregate hidden states and optionally append geometric features.
 

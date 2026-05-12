@@ -17,6 +17,7 @@ from sklearn.metrics import f1_score
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from sklearn.decomposition import PCA 
+# from sklearn.manifold import TSNE 
 
 class HallucinationProbe(nn.Module):
     """Binary classifier that detects hallucinations from hidden-state features.
@@ -26,12 +27,13 @@ class HallucinationProbe(nn.Module):
     built lazily in ``fit()`` once the feature dimension is known.
     """
 
-    def __init__(self, n_components: int = 128) -> None:
+    def __init__(self, n_components: int = 256) -> None:
         super().__init__()
         self._net: nn.Sequential | None = None  # built lazily in fit()
         self._scaler = StandardScaler()
         self._threshold: float = 0.5  # tuned by fit_hyperparameters()
         self._pca = PCA(n_components=n_components)
+        # self._pca = TSNE(n_components=2, perplexity=30)
     # ------------------------------------------------------------------
     # STUDENT: Replace or extend the network definition below.
     # ------------------------------------------------------------------
@@ -44,18 +46,23 @@ class HallucinationProbe(nn.Module):
             input_dim: Feature vector dimensionality.
         """
         
-        self.net = nn.Sequential(
+        self._net = nn.Sequential(
             nn.Linear(input_dim,256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.3),
             
-            nn.Linear(256,128),
-            nn.BatchNorm1d(128),
+            nn.Linear(256,64),
+            nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.Dropout(0.3),
             
-            nn.Linear(128,1),
+            nn.Linear(64,32),
+            nn.BatchNorm1d(32),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            
+            nn.Linear(32,1),
             nn.ReLU(),
             nn.Dropout(0.3),
             
@@ -94,7 +101,7 @@ class HallucinationProbe(nn.Module):
         """
         
         X_scaled = self._scaler.fit_transform(X)
-        X_scaled = self._pca.fit_transform(X_scaled)
+        # X_scaled = self._pca.fit_transform(X_scaled)
         
         self._build_network(X_scaled.shape[1])
 
@@ -110,10 +117,10 @@ class HallucinationProbe(nn.Module):
         # ------------------------------------------------------------------
         # STUDENT: Replace or extend the training loop below.
         # ------------------------------------------------------------------
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min", patience=10,factor=0.5)
+        optimizer = torch.optim.Adam(self.parameters(), lr=5e-4)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min", patience=30,factor=0.5)
         self.train()
-        for _ in range(200):
+        for _ in range(1000):
             optimizer.zero_grad()
             logits = self(X_t)
             loss = criterion(logits, y_t)
@@ -125,6 +132,7 @@ class HallucinationProbe(nn.Module):
         self.eval()
         return self
 
+    
     def fit_hyperparameters(
         self, X_val: np.ndarray, y_val: np.ndarray
     ) -> "HallucinationProbe":
@@ -158,6 +166,7 @@ class HallucinationProbe(nn.Module):
                 best_threshold = float(t)
 
         self._threshold = best_threshold
+        print(f"best threshold: {self._threshold}")
         return self
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -186,10 +195,10 @@ class HallucinationProbe(nn.Module):
             Used to compute AUROC.
         """
         X_scaled = self._scaler.transform(X)
-        X_scaled = self._pca.transform(X_scaled)
+        # X_scaled = self._pca.transform(X_scaled)
         X_t = torch.from_numpy(X_scaled).float()
         with torch.no_grad():
-            logits = self(X_t)
+            logits = self.forward(X_t)
             prob_pos = torch.sigmoid(logits).numpy()
         return np.stack([1.0 - prob_pos, prob_pos], axis=1)
 

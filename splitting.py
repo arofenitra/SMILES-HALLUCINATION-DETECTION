@@ -52,19 +52,22 @@ def split_data(
     """
 
     idx = np.arange(len(y))
-
-    idx_train_val, idx_test = train_test_split(
-        idx,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=y,
-    )
-    relative_val = val_size / (1.0 - test_size)
-    idx_train, idx_val = train_test_split(
-        idx_train_val,
-        test_size=relative_val,
-        random_state=random_state,
-        stratify=y[idx_train_val],
-    )
-    return [(idx_train, idx_val, idx_test)]
+    n_folds = 5
+    folds = []
+    for _ in range(5):
+        idx_train_val, idx_test = train_test_split(
+            idx,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=y,
+        )
+        relative_val = val_size / (1.0 - test_size)
+        idx_train, idx_val = train_test_split(
+            idx_train_val,
+            test_size=relative_val,
+            random_state=random_state,
+            stratify=y[idx_train_val],
+        )
+        folds +=[(idx_train, idx_val, idx_test)]
+    return folds
 
